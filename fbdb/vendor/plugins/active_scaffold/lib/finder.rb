@@ -100,7 +100,7 @@ module ActiveScaffold
         end
       else
         pager = ::Paginator.new(count, options[:per_page]) do |offset, per_page|
-          klass.find(:all, finder_options.merge(:offset => offset, :limit => per_page))
+          klass.find(:all, finder_options.merge(:limit => per_page + offset))[offset..-1]
         end
       end
 
