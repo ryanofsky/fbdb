@@ -282,6 +282,10 @@ module ActiveRecord
         false
       end
 
+      def supports_count_distinct? #:nodoc:
+        false
+      end
+
       def type_to_sql(type, limit = nil, precision = nil, scale = nil) #:nodoc:
         return super unless type.to_s == 'integer'
 
