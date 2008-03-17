@@ -46,6 +46,9 @@ module ActiveScaffold
           # example:
           #   data model: Park -> Den -> Bear
           #   constraint: :den => {:park => 5}
+          if column.integer?
+            v = v.to_i
+          end
           if v.is_a? Hash
             far_association = column.association.klass.reflect_on_association(v.keys.first)
             field = far_association.klass.primary_key

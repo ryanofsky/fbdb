@@ -1,0 +1,182 @@
+--- associations.rb	2008-03-09 01:15:20.000000000 -0500
++++ associations.rb	2008-03-16 20:34:49.000000000 -0400
+@@ -1247,9 +1247,17 @@
+ 
+         def construct_finder_sql_with_included_associations(options, join_dependency)
+           scope = scope(:find)
+-          sql = "SELECT #{column_aliases(join_dependency)} FROM #{(scope && scope[:from]) || options[:from] || quoted_table_name} "
+-          sql << join_dependency.join_associations.collect{|join| join.association_join }.join
+- 
++          join_sql = ""
++          from_sql = ""
++          join_dependency.join_associations.each do |joins|
++            joins.association_join.each do |join|
++              from_sql << "("
++              join_sql << join
++              join_sql << ")"
++            end
++          end
++          sql = "SELECT #{column_aliases(join_dependency)} FROM #{from_sql}#{(scope && scope[:from]) || options[:from] || quoted_table_name} #{join_sql}"
++
+           add_joins!(sql, options, scope)
+           add_conditions!(sql, options[:conditions], scope)
+           add_limited_ids_condition!(sql, options, join_dependency) if !using_limitable_reflections?(join_dependency.reflections) && ((scope && scope[:limit]) || options[:limit])
+@@ -1288,10 +1296,22 @@
+           else
+             sql << primary_key
+           end
+-          sql << " FROM #{connection.quote_table_name table_name} "
++
++          join_sql = ""
++          from_sql = ""
++          if is_distinct
++            join_dependency.join_associations.each do |joins|
++              joins.association_join.each do |join|
++                from_sql << "("
++                join_sql << join
++                join_sql << ")"
++              end
++            end
++          end
++
++          sql << " FROM #{from_sql} #{connection.quote_table_name table_name} #{join_sql}"
+ 
+           if is_distinct
+-            sql << join_dependency.join_associations.collect(&:association_join).join
+             add_joins!(sql, options, scope)
+           end
+ 
+@@ -1596,19 +1616,19 @@
+               connection = reflection.active_record.connection
+               join = case reflection.macro
+                 when :has_and_belongs_to_many
+-                  " #{join_type} %s ON %s.%s = %s.%s " % [
++                  [" #{join_type} %s ON %s.%s = %s.%s " % [
+                      table_alias_for(options[:join_table], aliased_join_table_name),
+                      connection.quote_table_name(aliased_join_table_name),
+                      options[:foreign_key] || reflection.active_record.to_s.foreign_key,
+                      connection.quote_table_name(parent.aliased_table_name),
+-		     reflection.active_record.primary_key] +
++		     reflection.active_record.primary_key],
+                   " #{join_type} %s ON %s.%s = %s.%s " % [
+                      table_name_and_alias,
+ 		     connection.quote_table_name(aliased_table_name),
+ 		     klass.primary_key,
+                      connection.quote_table_name(aliased_join_table_name),
+ 		     options[:association_foreign_key] || klass.to_s.foreign_key
+-                     ]
++                     ]]
+                 when :has_many, :has_one
+                   case
+                     when reflection.macro == :has_many && reflection.options[:through]
+@@ -1663,14 +1683,14 @@
+                         end
+                       end
+ 
+-                      " #{join_type} %s ON (%s.%s = %s.%s%s%s%s) " % [
++                      [" #{join_type} %s ON (%s.%s = %s.%s%s%s%s) " % [
+                         table_alias_for(through_reflection.klass.table_name, aliased_join_table_name),
+                         connection.quote_table_name(parent.aliased_table_name),
+ 			connection.quote_column_name(parent.primary_key),
+                         connection.quote_table_name(aliased_join_table_name),
+ 			connection.quote_column_name(jt_foreign_key),
+                         jt_as_extra, jt_source_extra, jt_sti_extra
+-                      ] +
++                      ],
+                       " #{join_type} %s ON (%s.%s = %s.%s%s) " % [
+                         table_name_and_alias, 
+                         connection.quote_table_name(aliased_table_name),
+@@ -1678,10 +1698,10 @@
+                         connection.quote_table_name(aliased_join_table_name),
+ 			connection.quote_column_name(second_key),
+                         as_extra
+-                      ]
++                      ]]
+ 
+                     when reflection.options[:as] && [:has_many, :has_one].include?(reflection.macro)
+-                      " #{join_type} %s ON %s.%s = %s.%s AND %s.%s = %s" % [
++                      [" #{join_type} %s ON %s.%s = %s.%s AND %s.%s = %s" % [
+                         table_name_and_alias,
+                         connection.quote_table_name(aliased_table_name),
+ 			"#{reflection.options[:as]}_id",
+@@ -1690,35 +1710,35 @@
+                         connection.quote_table_name(aliased_table_name),
+ 			"#{reflection.options[:as]}_type",
+                         klass.quote_value(parent.active_record.base_class.name)
+-                      ]
++                      ]]
+                     else
+                       foreign_key = options[:foreign_key] || reflection.active_record.name.foreign_key
+-                      " #{join_type} %s ON %s.%s = %s.%s " % [
++                      [" #{join_type} %s ON %s.%s = %s.%s " % [
+                         table_name_and_alias,
+                         aliased_table_name,
+ 			foreign_key,
+                         parent.aliased_table_name,
+ 			parent.primary_key
+-                      ]
++                      ]]
+                   end
+                 when :belongs_to
+-                  " #{join_type} %s ON %s.%s = %s.%s " % [
++                  [" #{join_type} %s ON %s.%s = %s.%s " % [
+                      table_name_and_alias,
+ 		     connection.quote_table_name(aliased_table_name),
+ 		     reflection.klass.primary_key,
+                      connection.quote_table_name(parent.aliased_table_name),
+ 		     options[:foreign_key] || klass.to_s.foreign_key
+-                    ]
++                    ]]
+                 else
+-                  ""
++                  [""]
+               end || ''
+-              join << %(AND %s.%s = %s ) % [
++              join[-1] << %(AND %s.%s = %s ) % [
+                 connection.quote_table_name(aliased_table_name),
+                 connection.quote_column_name(klass.inheritance_column),
+                 klass.quote_value(klass.name.demodulize)] unless klass.descends_from_active_record?
+ 
+               [through_reflection, reflection].each do |ref|
+-                join << "AND #{interpolate_sql(sanitize_sql(ref.options[:conditions]))} " if ref && ref.options[:conditions]
++                join[-1] << "AND #{interpolate_sql(sanitize_sql(ref.options[:conditions]))} " if ref && ref.options[:conditions]
+               end
+ 
+               join
+--- calculations.rb	2008-03-09 01:15:20.000000000 -0500
++++ calculations.rb	2008-03-16 21:17:13.000000000 -0400
+@@ -174,11 +174,22 @@
+ 
+           sql << ", #{options[:group_field]} AS #{options[:group_alias]}" if options[:group]
+           sql << " FROM (SELECT DISTINCT #{column_name}" if use_workaround
+-          sql << " FROM #{connection.quote_table_name(table_name)} "
++
++          join_sql = ""
++          from_sql = ""
+           if merged_includes.any?
+             join_dependency = ActiveRecord::Associations::ClassMethods::JoinDependency.new(self, merged_includes, options[:joins])
+-            sql << join_dependency.join_associations.collect{|join| join.association_join }.join
++            join_dependency.join_associations.each do |joins|
++              joins.association_join.each do |join|
++                from_sql << "("
++                join_sql << join
++                join_sql << ")"
++              end
++            end
+           end
++
++          sql << " FROM #{from_sql} #{connection.quote_table_name(table_name)} #{join_sql}"
++
+           add_joins!(sql, options, scope)
+           add_conditions!(sql, options[:conditions], scope)
+           add_limited_ids_condition!(sql, options, join_dependency) if join_dependency && !using_limitable_reflections?(join_dependency.reflections) && ((scope && scope[:limit]) || options[:limit])
+--- base.rb	2008-03-09 01:15:20.000000000 -0500
++++ base.rb	2008-03-16 21:14:44.000000000 -0400
+@@ -1427,6 +1427,7 @@
+           scope = scope(:find) if :auto == scope
+           join = (scope && scope[:joins]) || options[:joins]
+           case join
++          ### need to fix
+           when Symbol, Hash, Array
+             join_dependency = ActiveRecord::Associations::ClassMethods::InnerJoinDependency.new(self, join, nil)
+             sql << " #{join_dependency.join_associations.collect{|join| join.association_join }.join} "
