@@ -27,12 +27,22 @@ module ActiveRecord
       username    = config[:username] ? config[:username].to_s : 'sa'
       password    = config[:password] ? config[:password].to_s : ''
       autocommit  = config.key?(:autocommit) ? config[:autocommit] : true
-      connection_string = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=#{config[:database]}"
-      driver_url = "DBI:ADO:#{connection_string}"
-      conn = WIN32OLE.new('ADODB.Connection')
-      conn.Open(connection_string)
+      if config[:mode] == 'ado' || config[:mode].nil?
+        connection_string = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=#{config[:database]}"
+        driver_url = "DBI:ADO:#{connection_string}"
+        conn = WIN32OLE.new('ADODB.Connection')
+        conn.Open(connection_string)
+        ado = true
+      elsif config[:mode] == 'dao'
+        driver_url = "DBI:DAO:#{config[:database]}"
+        engine = WIN32OLE.new('DAO.DBEngine.36')
+        conn = engine.OpenDatabase(config[:database])
+        ado = false
+      else
+        raise ActiveRecordError, "Unknown connection mode #{config[:mode]}"  
+      end
       # conn["AutoCommit"] = autocommit # Works with DBI, but not ADO
-      ConnectionAdapters::MsAccessAdapter.new(conn, logger, [driver_url, username, password])
+      ConnectionAdapters::MsAccessAdapter.new(conn, logger, ado, [driver_url, username, password])
     end
   end # class Base
 
@@ -84,15 +94,15 @@ module ActiveRecord
       def simplified_type(field_type)
         case field_type
           when /real/i                                               : :float
-          when /int|bigint|smallint|tinyint/i                        : :integer
-          when /float|double|decimal|money|numeric|real|smallmoney/i : @scale == 0 ? :integer : :float
+          when /int|bigint|smallint|tinyint|byte|long/i              : :integer
+          when /float|double|decimal|money|numeric|real|smallmoney|currency|single/i : @scale == 0 ? :integer : :float
           when /datetime|smalldatetime/i                             : :datetime
           when /timestamp/i                                          : :timestamp
           when /time/i                                               : :time
           when /text|ntext/i                                         : :text
           when /binary|image|varbinary/i                             : :binary
           when /char|nchar|nvarchar|string|varchar/i                 : :string
-          when /bit/i                                                : :boolean
+          when /bit|bool/i                                           : :boolean
           else super
         end
       end
@@ -103,7 +113,7 @@ module ActiveRecord
         when :string    then value 
         when :integer   then value == true || value == false ? value == true ? '1' : '0' : value.to_i 
         when :float     then value.to_f 
-        when :datetime  then cast_to_date_or_time(value) 
+        when :datetime  then cast_to_datetime(value) 
         when :timestamp then cast_to_time(value)
         when :time      then cast_to_time(value)
         when :boolean   then value == true or (value =~ /^t(rue)?$/i) == 0 or value.to_s == '1'
@@ -250,8 +260,9 @@ module ActiveRecord
     # [Linux strongmad 2.6.11-1.1369_FC4 #1 Thu Jun 2 22:55:56 EDT 2005 i686 i686 i386 GNU/Linux]
     class MsAccessAdapter < AbstractAdapter
     
-      def initialize(connection, logger, connection_options=nil)
+      def initialize(connection, logger, ado, connection_options=nil)
         super(connection, logger)
+        @ado = ado
         @connection_options = connection_options
       end
 
@@ -344,8 +355,14 @@ module ActiveRecord
 
       def table_names_from_catalog
         table_names = []
-        table_names << self.catalog.Tables.each do |table|
-          table_names << table.Name
+        if @ado
+          table_names << self.catalog.Tables.each do |table|
+            table_names << table.Name
+          end
+        else
+          @connection.TableDefs.each do |table|
+            table_names << table.Name
+          end
         end
         table_names
       end
@@ -385,6 +402,14 @@ module ActiveRecord
         table_name = table_name.split('.')[-1] unless table_name.nil?
         table_name = table_name.gsub(/[\[\]]/, '')
 
+        if @ado
+          self.ado_columns(table_name, name)
+        else
+          self.dao_columns(table_name, name)
+        end
+      end
+
+      def ado_columns(table_name, name)
 # GATHER THE COLUMNS FROM MsAccess IN HERE
 # column_name, default_value, data_type, is_nullable
         columns = []
@@ -424,6 +449,41 @@ module ActiveRecord
         columns
       end
 
+      def dao_columns(table_name, name)
+        columns = []
+        ole_table = @connection.TableDefs(table_name)
+        ole_table.Fields.each do |ole_column|
+          name = ole_column.Name
+          default = ole_column.DefaultValue
+          sql_type = { # from DAO DataTypeEnum
+            0x01 => 'dbBoolean',
+            0x02 => 'dbByte',
+            0x03 => 'dbInteger',
+            0x04 => 'dbLong',
+            0x05 => 'dbCurrency',
+            0x06 => 'dbSingle',
+            0x07 => 'dbDouble',
+            0x08 => 'dbDate',
+            0x09 => 'dbBinary',
+            0x0a => 'dbText',
+            0x0b => 'dbLongBinary',
+            0x0c => 'dbMemo',
+            0x0f => 'dbGUID',
+            0x10 => 'dbBigInt',
+            0x11 => 'dbVarBinary',
+            0x12 => 'dbChar',
+            0x13 => 'dbNumeric',
+            0x14 => 'dbDecimal',
+            0x15 => 'dbFloat',
+            0x16 => 'dbTime',
+            0x17 => 'dbTimeStamp',
+          }[ole_column.Type]
+          null = !ole_column.Required
+          columns << MsAccessColumn.new(name, default, ole_column, ole_table, sql_type, null)
+        end
+        columns
+      end
+
       def columns_hash(table_name)
         chash = {}
         self.columns.each do |column|
@@ -433,9 +493,19 @@ module ActiveRecord
       end
 
       def prefetch_primary_key?(table_name=nil)
-        self.columns(table_name).each do |col|
-          if col.property_value('Autoincrement')
-            return false
+        if @ado
+          self.columns(table_name).each do |col|
+            if col.property_value('Autoincrement')
+              return false
+            end
+          end
+        else
+          dbAutoIncrField = 0x10 # from DAO FieldAttributeEnum
+          tabledef = @connection.TableDefs(table_name)
+          tabledef.Fields.each do |ole_column|
+            if ole_column.Attributes & dbAutoIncrField
+              return false
+            end
           end
         end
         return true
@@ -455,9 +525,11 @@ module ActiveRecord
       
       def next_sequence_value(sequence_name) #sequence_name will be like #{table_name}_seq
         table_name, primary_key = sequence_name.split(' ')
-        self.columns(table_name).each do |col|
-          if col.property_value('Autoincrement')
-            return col.property_value('Seed') #Not completely sure if this part works properly yet!
+        if @ado
+          self.columns(table_name).each do |col|
+            if col.property_value('Autoincrement')
+              return col.property_value('Seed') #Not completely sure if this part works properly yet!
+            end
           end
         end
         #At this point, there was no autoincrement field. Sometimes the primary key field is not set to autoincrement, but the software is intended to do that. Therefore, we can do a select query to get that value.
@@ -485,20 +557,32 @@ module ActiveRecord
       end
 
       def update(sql, name = nil)
-        execute(sql, name) do |handle|
-          handle.rows
-        end || select_one("SELECT @@ROWCOUNT AS AffectedRows")["AffectedRows"]
+        if @ado
+          execute(sql, name) do |handle|
+            handle.rows
+          end || select_one("SELECT @@ROWCOUNT AS AffectedRows")["AffectedRows"]
+        else
+          execute(sql, name)
+          @connection.RecordsAffected
+        end
         # fix select_one part for MsAccess!
       end
       
       alias_method :delete, :update
 
       def execute(sql, name = nil)
-# Take out identity_insert stuff for MsAccess
+        @logger.warn "MSACCESS EXEC: #{sql}"
         log(sql, name) do
-          @connection.Execute(sql) do |handle|
-            yield(handle) if block_given?
+# Take out identity_insert stuff for MsAccess
+          if @ado
+            @connection.Execute(sql) do |handle|
+              yield(handle) if block_given?
+            end
+          else
+            dbFailOnError = 0x80 # from DAO RecordsetOptionEnum
+            @connection.Execute(sql, dbFailOnError)
           end
+
         end
       end
 
@@ -736,6 +820,39 @@ module ActiveRecord
 
       private 
         def select(sql, name=nil)
+          @logger.warn "MSACCESS QUERY: #{sql}"
+          if @ado
+            ado_select(sql, name)
+          else
+            dao_select(sql, name)
+          end
+        end
+        
+        def dao_select(sql, name)
+          recordset = @connection.OpenRecordset(sql)
+          rows = []
+          cols = ""
+          recordset.Fields.each do |field|
+            cols += field.Name + " "
+          end
+          while !recordset.EOF
+            row = {}
+            recordset.Fields.each do |field|
+              # On queries with joins, where columns with the same name exist
+              # in more than one of the tables, DAO field names will be in the
+              # form "Table.Column" instead of just "Column". To prevent this
+              # from messing up ActiveRecord row instantiation, strip out dots
+              # and table names with a regular expression.
+              row[field.Name.sub(/.*\./, "")] = field.Value
+            end
+            rows << row
+            recordset.MoveNext
+          end
+          @logger.warn "MSACCESS COLS: #{cols}"
+          rows
+        end
+
+        def ado_select(sql, name)
           repair_special_columns(sql)
           recordset = WIN32OLE.new('ADODB.Recordset')
           recordset.Open(sql, @connection) # Fails for some databases: why?

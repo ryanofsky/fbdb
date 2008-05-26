@@ -1,5 +1,6 @@
---- associations.rb	2008-03-09 01:15:20.000000000 -0500
-+++ associations.rb	2008-03-16 20:34:49.000000000 -0400
+diff -ru active_record.orig/associations.rb active_record/associations.rb
+--- active_record.orig/associations.rb	2008-03-09 01:15:20.000000000 -0500
++++ active_record/associations.rb	2008-04-05 23:41:42.328000000 -0400
 @@ -1247,9 +1247,17 @@
  
          def construct_finder_sql_with_included_associations(options, join_dependency)
@@ -143,8 +144,20 @@
                end
  
                join
---- calculations.rb	2008-03-09 01:15:20.000000000 -0500
-+++ calculations.rb	2008-03-16 21:17:13.000000000 -0400
+diff -ru active_record.orig/base.rb active_record/base.rb
+--- active_record.orig/base.rb	2008-03-09 01:15:20.000000000 -0500
++++ active_record/base.rb	2008-03-16 21:14:44.675500000 -0400
+@@ -1427,6 +1427,7 @@
+           scope = scope(:find) if :auto == scope
+           join = (scope && scope[:joins]) || options[:joins]
+           case join
++          ### need to fix
+           when Symbol, Hash, Array
+             join_dependency = ActiveRecord::Associations::ClassMethods::InnerJoinDependency.new(self, join, nil)
+             sql << " #{join_dependency.join_associations.collect{|join| join.association_join }.join} "
+diff -ru active_record.orig/calculations.rb active_record/calculations.rb
+--- active_record.orig/calculations.rb	2008-03-09 01:15:20.000000000 -0500
++++ active_record/calculations.rb	2008-03-16 21:17:13.144250000 -0400
 @@ -174,11 +174,22 @@
  
            sql << ", #{options[:group_field]} AS #{options[:group_alias]}" if options[:group]
@@ -170,13 +183,3 @@
            add_joins!(sql, options, scope)
            add_conditions!(sql, options[:conditions], scope)
            add_limited_ids_condition!(sql, options, join_dependency) if join_dependency && !using_limitable_reflections?(join_dependency.reflections) && ((scope && scope[:limit]) || options[:limit])
---- base.rb	2008-03-09 01:15:20.000000000 -0500
-+++ base.rb	2008-03-16 21:14:44.000000000 -0400
-@@ -1427,6 +1427,7 @@
-           scope = scope(:find) if :auto == scope
-           join = (scope && scope[:joins]) || options[:joins]
-           case join
-+          ### need to fix
-           when Symbol, Hash, Array
-             join_dependency = ActiveRecord::Associations::ClassMethods::InnerJoinDependency.new(self, join, nil)
-             sql << " #{join_dependency.join_associations.collect{|join| join.association_join }.join} "
