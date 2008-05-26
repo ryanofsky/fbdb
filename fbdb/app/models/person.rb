@@ -6,4 +6,13 @@ class Person < ActiveRecord::Base
   def to_s
     "#{self.FIRSTNAME} #{self.LASTNAME}"
   end
+
+  def before_save()
+    if self.EXTENSION == ""
+      self.EXTENSION = nil
+    end
+    if self.SortCode == ""
+      self.SortCode = nil
+    end
+  end
 end
