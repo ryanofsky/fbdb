@@ -1,0 +1,2 @@
+class SexCodeController < ApplicationController
+end
