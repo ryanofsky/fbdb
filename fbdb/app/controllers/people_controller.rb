@@ -1,4 +1,4 @@
-class PersonController < ApplicationController
+class PeopleController < ApplicationController
   layout "admin"
   active_scaffold :person do |config|
     config.list.columns = [:SSNO, :LASTNAME, :FIRSTNAME, :SEX, :BIRTHDATE, :ETHNICITY, :EXTENSION ]

@@ -1,4 +1,4 @@
-class PhoneAddressController < ApplicationController
+class PhoneAddressesController < ApplicationController
   layout "admin"
   active_scaffold :phone_address do |config|
     config.list.columns = [:id, :Telephone, :ClientAddress, :TOWNCODES, :ClientZIP]

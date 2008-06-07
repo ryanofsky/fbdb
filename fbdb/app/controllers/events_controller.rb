@@ -1,4 +1,4 @@
-class EventController < ApplicationController
+class EventsController < ApplicationController
   layout "admin"
   active_scaffold :event do |config|
     config.list.columns = [:id, :EventDate, :Bags, :people]
