@@ -3,4 +3,8 @@ class PhoneAddress < ActiveRecord::Base
   set_primary_key :SSNO
   belongs_to :person, :foreign_key => :SSNO
   belongs_to :town, :foreign_key => :TOWNCODES
+
+  def to_label
+    "Address and Phone"
+  end
 end

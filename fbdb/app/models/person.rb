@@ -5,9 +5,6 @@ class Person < ActiveRecord::Base
   belongs_to :sex_code, :foreign_key => :SEX
   belongs_to :ethnicity, :foreign_key => :ETHNICITY
   has_and_belongs_to_many :events, :join_table => :LINKPERSONSEVENTS, :foreign_key => :SSNO, :association_foreign_key => :EventID
-  def to_s
-    "#{self.FIRSTNAME} #{self.LASTNAME}"
-  end
 
   def before_save()
     if self.EXTENSION == ""
@@ -16,5 +13,9 @@ class Person < ActiveRecord::Base
     if self.SortCode == ""
       self.SortCode = nil
     end
+  end
+
+  def to_label
+    "#{self.FIRSTNAME} #{self.LASTNAME}"
   end
 end

@@ -4,7 +4,8 @@ class Event < ActiveRecord::Base
   belongs_to :agency, :foreign_key => :AGENCYCODE
   belongs_to :school_district, :foreign_key => :SchoolCode
   has_and_belongs_to_many :people, :join_table => :LINKPERSONSEVENTS, :foreign_key => :EventID, :association_foreign_key => :SSNO
-  def to_s
-    self.EventDate
+
+  def to_label
+    "Event"
   end
 end

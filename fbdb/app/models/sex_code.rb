@@ -3,6 +3,6 @@ class SexCode < ActiveRecord::Base
   set_primary_key :SEXCODE
 
   def to_s
-    self.SEXCODE
+    self.SEXDEFINITION.capitalize
   end
 end
