@@ -1,3 +1,4 @@
+- Fix date entry to support all years
 - Display SSNs, telephone numbers, ZIP codes with dashes
 - Make it possible to edit SSNs, generate event id's
 - Make interface to easily add events from person form
