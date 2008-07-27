@@ -1,4 +1,4 @@
-- Make it possible to generate event id's
+- Fix adding people to events
 - Make interface to easily add events from person form
   (copying previous event info)
 - Make interface to easily set/edit address info from

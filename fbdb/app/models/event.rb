@@ -8,4 +8,10 @@ class Event < ActiveRecord::Base
   def to_label
     "Event"
   end
+
+  def before_create
+    if self.EventID.nil?
+      self.EventID = connection.select_one("SELECT MAX(EventID) FROM EVENTS").values[0] + 1
+    end
+  end
 end
