@@ -1,5 +1,6 @@
 class PeopleController < ApplicationController
   layout "admin"
+  CalendarDateSelect.format = :american
   active_scaffold :person do |config|
     config.columns = [:SSNO, :LASTNAME, :FIRSTNAME, :EXTENSION, :BIRTHDATE, :sex_code, :ethnicity]
     config.columns[:SSNO].label = "SSN"

@@ -19,6 +19,11 @@ class Person < ActiveRecord::Base
     end
   end
 
+  def SSNO
+    ssno = read_attribute :SSNO
+    ssno && "#{ssno[0..2]}-#{ssno[3..4]}-#{ssno[5..-1]}"
+  end
+
   # Hack to make it possible to modify SSNO. Hack has two parts:
   #
   # 1) Before update, the "primary" attribute on the SSNO column update
@@ -33,7 +38,7 @@ class Person < ActiveRecord::Base
 
   def SSNO=(new_ssno)
     @old_ssno ||= read_attribute :SSNO
-    super new_ssno
+    write_attribute :SSNO, new_ssno.gsub(/-/, "")
   end
 
   def before_update
