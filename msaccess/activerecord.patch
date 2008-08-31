@@ -1,55 +1,48 @@
 diff -ru active_record.orig/associations.rb active_record/associations.rb
---- active_record.orig/associations.rb	2008-03-09 01:15:20.000000000 -0500
-+++ active_record/associations.rb	2008-04-05 23:41:42.328000000 -0400
-@@ -1247,9 +1247,17 @@
+--- active_record.orig/associations.rb	2008-08-23 16:34:26.307923200 -0400
++++ active_record/associations.rb	2008-08-31 18:45:39.969952000 -0400
+@@ -1422,10 +1422,10 @@
  
          def construct_finder_sql_with_included_associations(options, join_dependency)
            scope = scope(:find)
 -          sql = "SELECT #{column_aliases(join_dependency)} FROM #{(scope && scope[:from]) || options[:from] || quoted_table_name} "
 -          sql << join_dependency.join_associations.collect{|join| join.association_join }.join
-- 
-+          join_sql = ""
-+          from_sql = ""
-+          join_dependency.join_associations.each do |joins|
-+            joins.association_join.each do |join|
-+              from_sql << "("
-+              join_sql << join
-+              join_sql << ")"
-+            end
-+          end
-+          sql = "SELECT #{column_aliases(join_dependency)} FROM #{from_sql}#{(scope && scope[:from]) || options[:from] || quoted_table_name} #{join_sql}"
-+
-           add_joins!(sql, options, scope)
+-
+-          add_joins!(sql, options, scope)
++          sql = "SELECT #{column_aliases(join_dependency)}"
++          table = (scope && scope[:from]) || options[:from] || quoted_table_name
++          joins = join_dependency.join_associations.inject([]) { |joins, assoc| joins.concat(assoc.association_join) }
++          add_joins!(sql, table, joins, options, scope)
            add_conditions!(sql, options[:conditions], scope)
            add_limited_ids_condition!(sql, options, join_dependency) if !using_limitable_reflections?(join_dependency.reflections) && ((scope && scope[:limit]) || options[:limit])
-@@ -1288,10 +1296,22 @@
-           else
-             sql << primary_key
-           end
--          sql << " FROM #{connection.quote_table_name table_name} "
-+
-+          join_sql = ""
-+          from_sql = ""
-+          if is_distinct
-+            join_dependency.join_associations.each do |joins|
-+              joins.association_join.each do |join|
-+                from_sql << "("
-+                join_sql << join
-+                join_sql << ")"
-+              end
-+            end
-+          end
-+
-+          sql << " FROM #{from_sql} #{connection.quote_table_name table_name} #{join_sql}"
  
+@@ -1467,16 +1467,13 @@
+ 
+           is_distinct = !options[:joins].blank? || include_eager_conditions?(options, tables_from_conditions) || include_eager_order?(options, tables_from_order)
+           sql = "SELECT "
++          table = connection.quote_table_name table_name
            if is_distinct
--            sql << join_dependency.join_associations.collect(&:association_join).join
-             add_joins!(sql, options, scope)
+             sql << connection.distinct("#{connection.quote_table_name table_name}.#{primary_key}", options[:order])
++            joins = distinct_join_associations.inject([]) { |joins, assoc| joins.concat(assoc.association_join) }
++            add_joins!(sql, table, joins, options, scope)
+           else
+-            sql << primary_key
+-          end
+-          sql << " FROM #{connection.quote_table_name table_name} "
+-
+-          if is_distinct
+-            sql << distinct_join_associations.collect(&:association_join).join
+-            add_joins!(sql, options, scope)
++            sql << "#{primary_key} FROM #{table} "
            end
  
-@@ -1596,19 +1616,19 @@
+           add_conditions!(sql, options[:conditions], scope)
+@@ -1802,21 +1799,21 @@
+ 
+             def association_join
                connection = reflection.active_record.connection
-               join = case reflection.macro
+-              join = case reflection.macro
++              joins = case reflection.macro
                  when :has_and_belongs_to_many
 -                  " #{join_type} %s ON %s.%s = %s.%s " % [
 +                  [" #{join_type} %s ON %s.%s = %s.%s " % [
@@ -57,20 +50,20 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
                       connection.quote_table_name(aliased_join_table_name),
                       options[:foreign_key] || reflection.active_record.to_s.foreign_key,
                       connection.quote_table_name(parent.aliased_table_name),
--		     reflection.active_record.primary_key] +
-+		     reflection.active_record.primary_key],
+-                     reflection.active_record.primary_key] +
++                     reflection.active_record.primary_key],
                    " #{join_type} %s ON %s.%s = %s.%s " % [
                       table_name_and_alias,
- 		     connection.quote_table_name(aliased_table_name),
- 		     klass.primary_key,
+                      connection.quote_table_name(aliased_table_name),
+                      klass.primary_key,
                       connection.quote_table_name(aliased_join_table_name),
- 		     options[:association_foreign_key] || klass.to_s.foreign_key
+                      options[:association_foreign_key] || klass.to_s.foreign_key
 -                     ]
 +                     ]]
                  when :has_many, :has_one
                    case
                      when reflection.macro == :has_many && reflection.options[:through]
-@@ -1663,14 +1683,14 @@
+@@ -1871,14 +1868,14 @@
                          end
                        end
  
@@ -78,18 +71,18 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
 +                      [" #{join_type} %s ON (%s.%s = %s.%s%s%s%s) " % [
                          table_alias_for(through_reflection.klass.table_name, aliased_join_table_name),
                          connection.quote_table_name(parent.aliased_table_name),
- 			connection.quote_column_name(parent.primary_key),
+                         connection.quote_column_name(parent.primary_key),
                          connection.quote_table_name(aliased_join_table_name),
- 			connection.quote_column_name(jt_foreign_key),
+                         connection.quote_column_name(jt_foreign_key),
                          jt_as_extra, jt_source_extra, jt_sti_extra
 -                      ] +
 +                      ],
                        " #{join_type} %s ON (%s.%s = %s.%s%s) " % [
-                         table_name_and_alias, 
+                         table_name_and_alias,
                          connection.quote_table_name(aliased_table_name),
-@@ -1678,10 +1698,10 @@
+@@ -1886,10 +1883,10 @@
                          connection.quote_table_name(aliased_join_table_name),
- 			connection.quote_column_name(second_key),
+                         connection.quote_column_name(second_key),
                          as_extra
 -                      ]
 +                      ]]
@@ -99,10 +92,10 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
 +                      [" #{join_type} %s ON %s.%s = %s.%s AND %s.%s = %s" % [
                          table_name_and_alias,
                          connection.quote_table_name(aliased_table_name),
- 			"#{reflection.options[:as]}_id",
-@@ -1690,35 +1710,35 @@
+                         "#{reflection.options[:as]}_id",
+@@ -1898,38 +1895,38 @@
                          connection.quote_table_name(aliased_table_name),
- 			"#{reflection.options[:as]}_type",
+                         "#{reflection.options[:as]}_type",
                          klass.quote_value(parent.active_record.base_class.name)
 -                      ]
 +                      ]]
@@ -112,9 +105,9 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
 +                      [" #{join_type} %s ON %s.%s = %s.%s " % [
                          table_name_and_alias,
                          aliased_table_name,
- 			foreign_key,
+                         foreign_key,
                          parent.aliased_table_name,
- 			parent.primary_key
+                         parent.primary_key
 -                      ]
 +                      ]]
                    end
@@ -122,10 +115,10 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
 -                  " #{join_type} %s ON %s.%s = %s.%s " % [
 +                  [" #{join_type} %s ON %s.%s = %s.%s " % [
                       table_name_and_alias,
- 		     connection.quote_table_name(aliased_table_name),
- 		     reflection.klass.primary_key,
+                      connection.quote_table_name(aliased_table_name),
+                      reflection.klass.primary_key,
                       connection.quote_table_name(parent.aliased_table_name),
- 		     options[:foreign_key] || klass.to_s.foreign_key
+                      options[:foreign_key] || reflection.primary_key_name
 -                    ]
 +                    ]]
                  else
@@ -133,53 +126,98 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
 +                  [""]
                end || ''
 -              join << %(AND %s.%s = %s ) % [
-+              join[-1] << %(AND %s.%s = %s ) % [
++              joins[-1] << %(AND %s.%s = %s ) % [
                  connection.quote_table_name(aliased_table_name),
                  connection.quote_column_name(klass.inheritance_column),
                  klass.quote_value(klass.name.demodulize)] unless klass.descends_from_active_record?
  
                [through_reflection, reflection].each do |ref|
 -                join << "AND #{interpolate_sql(sanitize_sql(ref.options[:conditions]))} " if ref && ref.options[:conditions]
-+                join[-1] << "AND #{interpolate_sql(sanitize_sql(ref.options[:conditions]))} " if ref && ref.options[:conditions]
++                joins[-1] << "AND #{interpolate_sql(sanitize_sql(ref.options[:conditions]))} " if ref && ref.options[:conditions]
                end
  
-               join
+-              join
++              joins
+             end
+ 
+             protected
 diff -ru active_record.orig/base.rb active_record/base.rb
---- active_record.orig/base.rb	2008-03-09 01:15:20.000000000 -0500
-+++ active_record/base.rb	2008-03-16 21:14:44.675500000 -0400
-@@ -1427,6 +1427,7 @@
+--- active_record.orig/base.rb	2008-08-23 16:34:26.307923200 -0400
++++ active_record/base.rb	2008-08-31 18:46:43.161531200 -0400
+@@ -1466,9 +1466,8 @@
+         def construct_finder_sql(options)
+           scope = scope(:find)
+           sql  = "SELECT #{options[:select] || (scope && scope[:select]) || (options[:joins] && quoted_table_name + '.*') || '*'} "
+-          sql << "FROM #{(scope && scope[:from]) || options[:from] || quoted_table_name} "
+ 
+-          add_joins!(sql, options, scope)
++          add_joins!(sql, (scope && scope[:from]) || options[:from] || quoted_table_name, [], options, scope)
+           add_conditions!(sql, options[:conditions], scope)
+ 
+           add_group!(sql, options[:group], scope)
+@@ -1553,17 +1552,20 @@
+         end
+ 
+         # The optional scope argument is for the current <tt>:find</tt> scope.
+-        def add_joins!(sql, options, scope = :auto)
++        def add_joins!(sql, table, joins, options, scope = :auto)
++	  joins = joins.dup
            scope = scope(:find) if :auto == scope
-           join = (scope && scope[:joins]) || options[:joins]
-           case join
-+          ### need to fix
-           when Symbol, Hash, Array
-             join_dependency = ActiveRecord::Associations::ClassMethods::InnerJoinDependency.new(self, join, nil)
-             sql << " #{join_dependency.join_associations.collect{|join| join.association_join }.join} "
+           [(scope && scope[:joins]), options[:joins]].each do |join|
+             case join
+             when Symbol, Hash, Array
+               join_dependency = ActiveRecord::Associations::ClassMethods::InnerJoinDependency.new(self, join, nil)
+-              sql << " #{join_dependency.join_associations.collect { |assoc| assoc.association_join }.join} "
++              join_dependency.join_associations.each { |assoc| joins.concat(assoc.association_join) }
+             else
+-              sql << " #{join} "
++              joins << join if join
+             end
+           end
++	  template = connection.left_associative_joins? ? "nono%s %s" : "(%s %s)" 
++	  sql << " FROM #{joins.inject(table) { |a, b| template % [a, b] }} "
+         end
+ 
+         # Adds a sanitized version of +conditions+ to the +sql+ string. Note that the passed-in +sql+ string is changed.
 diff -ru active_record.orig/calculations.rb active_record/calculations.rb
---- active_record.orig/calculations.rb	2008-03-09 01:15:20.000000000 -0500
-+++ active_record/calculations.rb	2008-03-16 21:17:13.144250000 -0400
-@@ -174,11 +174,22 @@
+--- active_record.orig/calculations.rb	2008-08-23 16:34:26.307923200 -0400
++++ active_record/calculations.rb	2008-08-31 18:45:22.104262400 -0400
+@@ -179,12 +179,13 @@
  
            sql << ", #{options[:group_field]} AS #{options[:group_alias]}" if options[:group]
-           sql << " FROM (SELECT DISTINCT #{column_name}" if use_workaround
+           sql << " FROM (SELECT #{distinct}#{column_name}" if use_workaround
 -          sql << " FROM #{connection.quote_table_name(table_name)} "
-+
-+          join_sql = ""
-+          from_sql = ""
++          table = connection.quote_table_name(table_name)
++          joins = []
            if merged_includes.any?
              join_dependency = ActiveRecord::Associations::ClassMethods::JoinDependency.new(self, merged_includes, options[:joins])
 -            sql << join_dependency.join_associations.collect{|join| join.association_join }.join
-+            join_dependency.join_associations.each do |joins|
-+              joins.association_join.each do |join|
-+                from_sql << "("
-+                join_sql << join
-+                join_sql << ")"
-+              end
-+            end
++            joins = join_dependency.join_associations.inject([]) { |joins, assoc| joins.concat(assoc.association_join) }
            end
-+
-+          sql << " FROM #{from_sql} #{connection.quote_table_name(table_name)} #{join_sql}"
-+
-           add_joins!(sql, options, scope)
+-          add_joins!(sql, options, scope)
++          add_joins!(sql, table, joins, options, scope)
            add_conditions!(sql, options[:conditions], scope)
            add_limited_ids_condition!(sql, options, join_dependency) if join_dependency && !using_limitable_reflections?(join_dependency.reflections) && ((scope && scope[:limit]) || options[:limit])
+ 
+diff -ru active_record.orig/connection_adapters/abstract_adapter.rb active_record/connection_adapters/abstract_adapter.rb
+--- active_record.orig/connection_adapters/abstract_adapter.rb	2008-08-23 16:34:26.327952000 -0400
++++ active_record/connection_adapters/abstract_adapter.rb	2008-08-31 16:03:31.516475200 -0400
+@@ -59,6 +59,17 @@
+         false
+       end
+ 
++      # Does the sql interpreter order JOIN operations from left to right?
++      # This is +true+ for all adapters except for MS-Access in DAO mode.
++      # If +false+, extra parentheses are added to prevent the parser from
++      # raising errors about ambiguity. Example:
++      #   SELECT * FROM table INNER JOIN join1 INNER JOIN join2
++      # becomes:
++      #   SELECT * FROM ((table INNER JOIN join1) INNER JOIN join2)
++      def left_associative_joins?
++        true
++      end
++
+       def reset_runtime #:nodoc:
+         rt, @runtime = @runtime, 0
+         rt
+Only in active_record/connection_adapters: msaccess_adapter.rb
