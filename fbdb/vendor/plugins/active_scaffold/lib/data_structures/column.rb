@@ -162,15 +162,6 @@ module ActiveScaffold::DataStructures
       self.association and self.association.options.has_key? :polymorphic and self.association.options[:polymorphic]
     end
 
-    def integer?
-      column = if self.association
-        self.association.klass.columns_hash[self.association.klass.primary_key]
-      else
-        @column
-      end
-      column.type == :integer
-    end
-
     # an interpreted property. the column is virtual if it isn't from the active record model or any associated models
     def virtual?
       column.nil? && association.nil?
