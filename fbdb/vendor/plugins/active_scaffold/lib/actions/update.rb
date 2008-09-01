@@ -55,6 +55,10 @@ module ActiveScaffold::Actions
       end
     end
 
+    def update_id
+        @record.id
+    end
+
     # for inline (inlist) editing
     def update_column
       do_update_column

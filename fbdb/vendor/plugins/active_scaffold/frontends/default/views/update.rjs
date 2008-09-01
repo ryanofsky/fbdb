@@ -1,6 +1,7 @@
 cancel_selector = "##{element_form_id(:action => :update)} a.cancel".to_json
 
 if controller.send :successful?
+  page << "$$(#{cancel_selector}).first().link.refresh_url = '" + (url_for params_for(:action => :row, :id => controller.update_id, :_method => :get, :escape => false)) + "'"
   page << "$$(#{cancel_selector}).first().link.close_with_refresh();"
   page.replace active_scaffold_calculations_id, :partial => 'list_calculations' if active_scaffold_config.list.columns.any? {|c| c.calculation?}
 else
