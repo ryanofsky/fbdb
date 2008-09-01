@@ -1,6 +1,6 @@
 diff -ru active_record.orig/associations.rb active_record/associations.rb
 --- active_record.orig/associations.rb	2008-08-23 16:34:26.307923200 -0400
-+++ active_record/associations.rb	2008-08-31 18:45:39.969952000 -0400
++++ active_record/associations.rb	2008-08-31 22:16:29.001305600 -0400
 @@ -1422,10 +1422,10 @@
  
          def construct_finder_sql_with_included_associations(options, join_dependency)
@@ -37,7 +37,20 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
            end
  
            add_conditions!(sql, options[:conditions], scope)
-@@ -1802,21 +1799,21 @@
+@@ -1638,7 +1635,11 @@
+           end
+ 
+           def join_for_table_name(table_name)
+-            @joins.select{|j|j.aliased_table_name == table_name.gsub(/^\"(.*)\"$/){$1} }.first rescue nil
++            # Manually applied bugfix from:
++            # http://rails.lighthouseapp.com/projects/8994/tickets/372-using-conditions-order-on-a-join-table-will-break-on-a-limited-eager-loading
++            join = (@joins.select{|j|j.aliased_table_name.to_s == table_name.gsub(/^\"(.*)\"$/){$1} }.first) rescue nil
++            return join unless join.nil?
++            @joins.select{|j|j.is_a?(JoinAssociation) && j.aliased_join_table_name.to_s == table_name.gsub(/^\"(.*)\"$/){$1} }.first rescue nil
+           end
+ 
+           def joins_for_table_name(table_name)
+@@ -1802,21 +1803,21 @@
  
              def association_join
                connection = reflection.active_record.connection
@@ -63,7 +76,7 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
                  when :has_many, :has_one
                    case
                      when reflection.macro == :has_many && reflection.options[:through]
-@@ -1871,14 +1868,14 @@
+@@ -1871,14 +1872,14 @@
                          end
                        end
  
@@ -80,7 +93,7 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
                        " #{join_type} %s ON (%s.%s = %s.%s%s) " % [
                          table_name_and_alias,
                          connection.quote_table_name(aliased_table_name),
-@@ -1886,10 +1883,10 @@
+@@ -1886,10 +1887,10 @@
                          connection.quote_table_name(aliased_join_table_name),
                          connection.quote_column_name(second_key),
                          as_extra
@@ -93,7 +106,7 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
                          table_name_and_alias,
                          connection.quote_table_name(aliased_table_name),
                          "#{reflection.options[:as]}_id",
-@@ -1898,38 +1895,38 @@
+@@ -1898,38 +1899,38 @@
                          connection.quote_table_name(aliased_table_name),
                          "#{reflection.options[:as]}_type",
                          klass.quote_value(parent.active_record.base_class.name)
@@ -143,7 +156,7 @@ diff -ru active_record.orig/associations.rb active_record/associations.rb
              protected
 diff -ru active_record.orig/base.rb active_record/base.rb
 --- active_record.orig/base.rb	2008-08-23 16:34:26.307923200 -0400
-+++ active_record/base.rb	2008-08-31 18:46:43.161531200 -0400
++++ active_record/base.rb	2008-08-31 22:14:39.721728000 -0400
 @@ -1466,9 +1466,8 @@
          def construct_finder_sql(options)
            scope = scope(:find)
@@ -174,7 +187,7 @@ diff -ru active_record.orig/base.rb active_record/base.rb
 +              joins << join if join
              end
            end
-+	  template = connection.left_associative_joins? ? "nono%s %s" : "(%s %s)" 
++	  template = connection.left_associative_joins? ? "%s %s" : "(%s %s)" 
 +	  sql << " FROM #{joins.inject(table) { |a, b| template % [a, b] }} "
          end
  
